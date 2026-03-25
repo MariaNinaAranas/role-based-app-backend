@@ -1,58 +1,101 @@
 /* ============================================================
-   PHASE 1 - Required CSS Rules (from activity guide)
+   Auth-based visibility — controlled by body classes
+   set dynamically in script.js via setAuthState()
    ============================================================ */
 
-/* Hide all pages by default */
-.page { display: none; }
-
-/* Only show the active page */
-.page.active { display: block; }
-
 /* When NOT authenticated: hide logged-in elements */
-body.not-authenticated .role-logged-in { display: none; }
+body.not-authenticated .role-logged-in  { display: none !important; }
 
 /* When authenticated: hide logged-out elements */
-body.authenticated .role-logged-out { display: none; }
+body.authenticated     .role-logged-out { display: none !important; }
 
 /* Admin-only elements hidden by default */
-.role-admin { display: none; }
+.role-admin { display: none !important; }
 
-/* Show admin elements only when user is admin */
-body.is-admin .role-admin { display: block; }
+/* Show admin elements only when user has is-admin class on body */
+body.is-admin .role-admin               { display: block !important; }
+
+/* Admin dropdown items need block not inline */
+body.is-admin .role-admin.dropdown-item { display: block !important; }
 
 /* ============================================================
-   EXTRA POLISH
+   Base Layout
    ============================================================ */
 
 body {
   background-color: #f8f9fa;
+  min-height: 100vh;
 }
 
-main {
-  min-height: calc(100vh - 60px);
+#app-content {
+  min-height: calc(100vh - 72px);
+  padding-bottom: 2rem;
 }
 
-/* Make nav dropdown items show correctly as inline (for nav links) */
-.role-admin.dropdown-item {
-  display: none;
+/* ============================================================
+   Cards
+   ============================================================ */
+
+.card {
+  border-radius: 8px;
+  border: 1px solid rgba(0, 0, 0, .08);
 }
 
-body.is-admin .role-admin.dropdown-item {
-  display: block;
+.card-header {
+  border-radius: 8px 8px 0 0 !important;
 }
 
-/* Toast styling */
-.toast-msg {
-  min-width: 250px;
-}
+/* ============================================================
+   Badges
+   ============================================================ */
 
-/* Status badge spacing */
 .badge {
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   padding: 0.4em 0.7em;
 }
 
-/* Card form max width consistency */
-.card {
-  border-radius: 8px;
+/* ============================================================
+   Tables
+   ============================================================ */
+
+.table th {
+  white-space: nowrap;
+}
+
+/* ============================================================
+   Navbar tweaks
+   ============================================================ */
+
+.navbar-brand {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+/* ============================================================
+   Toast container (created dynamically in showToast)
+   ============================================================ */
+
+.toast-container {
+  z-index: 9999;
+}
+
+/* ============================================================
+   Pending / Empty states
+   ============================================================ */
+
+.display-1.text-warning i,
+.display-1.text-primary i,
+.display-1.text-muted  i {
+  font-size: inherit;
+}
+
+/* ============================================================
+   Responsive helpers
+   ============================================================ */
+
+@media (max-width: 576px) {
+  .btn-group-sm > .btn {
+    padding: 0.2rem 0.45rem;
+    font-size: 0.78rem;
+  }
 }

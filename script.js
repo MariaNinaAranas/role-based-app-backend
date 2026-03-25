@@ -6,9 +6,6 @@ const CONFIG = {
     STORAGE_KEY: 'ipt_demo_v1',
     APP_NAME: 'Full-Stack App',
     DEFAULT_DATA: {
-        // FIX #1: Accounts array removed entirely.
-        // All user/account data is now managed by the backend (server.js).
-        // No passwords or user credentials should ever be stored in localStorage.
         departments: [
             {
                 id: 1,
@@ -28,17 +25,14 @@ const CONFIG = {
     }
 };
 
-// Helper function to generate unique IDs
 function generateId(array) {
     if (!array || array.length === 0) return 1;
     return Math.max(...array.map(item => item.id || 0)) + 1;
 }
 
 // ============================================
-// Data Storage Functions
-// FIX #2: localStorage is used ONLY for non-sensitive local data:
-//         departments, employees, requests.
-// Accounts are fully handled by the backend API — never localStorage.
+// Data Storage (localStorage — non-sensitive only)
+// Accounts are NEVER stored in localStorage.
 // ============================================
 
 function loadFromStorage() {
@@ -46,19 +40,17 @@ function loadFromStorage() {
         const data = localStorage.getItem(CONFIG.STORAGE_KEY);
         if (data) {
             const parsed = JSON.parse(data);
-            // FIX #2: Strip out any leftover 'accounts' key from old localStorage data
-            delete parsed.accounts;
+            delete parsed.accounts; // strip leftover accounts if any
             return parsed;
         }
     } catch (error) {
         console.error('Error loading data:', error);
     }
-    return CONFIG.DEFAULT_DATA;
+    return JSON.parse(JSON.stringify(CONFIG.DEFAULT_DATA)); // deep copy
 }
 
 function saveToStorage(data) {
     try {
-        // FIX #2: Never save accounts to localStorage
         const safeData = { ...data };
         delete safeData.accounts;
         localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify(safeData));
@@ -72,7 +64,7 @@ function saveToStorage(data) {
 function initializeDatabase() {
     const data = loadFromStorage();
     window.db = data;
-    persistDatabase(); // Save defaults to localStorage on first load
+    persistDatabase();
     return data;
 }
 
@@ -87,11 +79,6 @@ function getAll(collection) {
 function getById(collection, id) {
     const items = getAll(collection);
     return items.find(item => item.id === parseInt(id));
-}
-
-function getByProperty(collection, property, value) {
-    const items = getAll(collection);
-    return items.find(item => item[property] === value);
 }
 
 function addItem(collection, item) {
@@ -129,7 +116,7 @@ function deleteItem(collection, id) {
 }
 
 // ============================================
-// Authentication Functions
+// Authentication Helpers
 // ============================================
 
 function getAuthHeader() {
@@ -148,12 +135,12 @@ function getCurrentUser() {
             return null;
         }
         return {
-            id: payload.id,
+            id:        payload.id,
             firstName: payload.firstName || payload.username,
-            lastName: payload.lastName || '',
-            email: payload.username,
-            role: payload.role,
-            verified: true
+            lastName:  payload.lastName  || '',
+            email:     payload.username,
+            role:      payload.role,
+            verified:  true
         };
     } catch (e) {
         sessionStorage.removeItem('authToken');
@@ -173,6 +160,7 @@ function isAdmin() {
 function logout() {
     sessionStorage.removeItem('authToken');
     setAuthState(false, null);
+    showToast('Logged out successfully.', 'info');
     navigateTo('#/');
 }
 
@@ -195,7 +183,7 @@ function requireAdmin() {
 }
 
 // ============================================
-// Auth State Management
+// Auth State — updates navbar classes
 // ============================================
 
 function setAuthState(isAuth, user) {
@@ -207,10 +195,13 @@ function setAuthState(isAuth, user) {
             document.body.classList.add('is-admin');
         }
         document.querySelectorAll('.user-name').forEach(el => {
-            el.textContent = user.firstName;
+            el.textContent = user.firstName || user.email;
         });
     } else {
         document.body.classList.add('not-authenticated');
+        document.querySelectorAll('.user-name').forEach(el => {
+            el.textContent = 'User';
+        });
     }
 }
 
@@ -231,16 +222,16 @@ function handleRouting() {
     setAuthState(isAuthenticated(), currentUser);
 
     const routes = {
-        '/': renderHome,
-        '/login': renderLogin,
-        '/register': renderRegister,
-        '/pending': renderPending,
-        '/verify': renderVerify,
-        '/verify-email': renderVerify,
-        '/profile': () => requireAuth() && renderProfile(),
-        '/requests': () => requireAuth() && renderRequests(),
-        '/employees': () => requireAdmin() && renderEmployees(),
-        '/accounts': () => requireAdmin() && renderAccounts(),
+        '/':            renderHome,
+        '/login':       renderLogin,
+        '/register':    renderRegister,
+        '/pending':     renderPending,
+        '/verify':      renderVerify,
+        '/verify-email':renderVerify,
+        '/profile':     () => requireAuth()  && renderProfile(),
+        '/requests':    () => requireAuth()  && renderRequests(),
+        '/employees':   () => requireAdmin() && renderEmployees(),
+        '/accounts':    () => requireAdmin() && renderAccounts(),
         '/departments': () => requireAdmin() && renderDepartments()
     };
 
@@ -249,12 +240,21 @@ function handleRouting() {
 }
 
 // ============================================
-// Page Rendering Functions
+// Logout — wire up navbar button
+// ============================================
+
+document.getElementById('btn-logout').addEventListener('click', function(e) {
+    e.preventDefault();
+    logout();
+});
+
+// ============================================
+// Page: Home
 // ============================================
 
 function renderHome() {
     const content = document.getElementById('app-content');
-    const isAuth = isAuthenticated();
+    const isAuth  = isAuthenticated();
 
     content.innerHTML = `
         <div class="text-center mb-5">
@@ -266,26 +266,29 @@ function renderHome() {
                     <ul class="list-unstyled text-start">
                         <li class="mb-2"><i class="bi bi-check-circle-fill text-success"></i> Email registration via backend</li>
                         <li class="mb-2"><i class="bi bi-check-circle-fill text-success"></i> Login with real JWT token</li>
-                        <li class="mb-2"><i class="bi bi-check-circle-fill text-success"></i> Role-based UI (Admin/User)</li>
+                        <li class="mb-2"><i class="bi bi-check-circle-fill text-success"></i> Role-based UI (Admin / User)</li>
                         <li class="mb-2"><i class="bi bi-check-circle-fill text-success"></i> CRUD for Employees, Departments, Requests</li>
                     </ul>
                 </div>
             </div>
 
             <div class="mt-4">
-                ${!isAuth ? `
-                    <a href="#/register" class="btn btn-primary btn-lg me-2">
-                        Get Started <i class="bi bi-arrow-right"></i>
-                    </a>
-                ` : `
-                    <a href="#/profile" class="btn btn-primary btn-lg">
-                        Go to Profile <i class="bi bi-arrow-right"></i>
-                    </a>
-                `}
+                ${!isAuth
+                    ? `<a href="#/register" class="btn btn-primary btn-lg me-2">
+                           Get Started <i class="bi bi-arrow-right"></i>
+                       </a>`
+                    : `<a href="#/profile" class="btn btn-primary btn-lg">
+                           Go to Profile <i class="bi bi-arrow-right"></i>
+                       </a>`
+                }
             </div>
         </div>
     `;
 }
+
+// ============================================
+// Page: Login
+// ============================================
 
 function renderLogin() {
     const content = document.getElementById('app-content');
@@ -297,24 +300,22 @@ function renderLogin() {
                     <div class="card-body p-4">
                         <h2 class="card-title mb-4">Login</h2>
 
-                        <form id="loginForm">
-                            <div class="mb-3">
-                                <label for="email" class="form-label">Email</label>
-                                <input type="email" class="form-control" id="email" required placeholder="Enter your email">
-                            </div>
-
-                            <div class="mb-3">
-                                <label for="password" class="form-label">Password</label>
-                                <input type="password" class="form-control" id="password" required placeholder="Enter your password">
-                            </div>
-
-                            <div class="d-grid gap-2">
-                                <button type="submit" class="btn btn-primary">
-                                    <i class="bi bi-box-arrow-in-right"></i> Login
-                                </button>
-                                <a href="#/" class="btn btn-outline-secondary">Cancel</a>
-                            </div>
-                        </form>
+                        <div class="mb-3">
+                            <label class="form-label">Email</label>
+                            <input type="email" class="form-control" id="loginEmail"
+                                   placeholder="Enter your email" autocomplete="email" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Password</label>
+                            <input type="password" class="form-control" id="loginPassword"
+                                   placeholder="Enter your password" autocomplete="current-password" />
+                        </div>
+                        <div class="d-grid gap-2">
+                            <button class="btn btn-primary" id="btnDoLogin">
+                                <i class="bi bi-box-arrow-in-right"></i> Login
+                            </button>
+                            <a href="#/" class="btn btn-outline-secondary">Cancel</a>
+                        </div>
 
                         <div class="text-center mt-3">
                             <small class="text-muted">
@@ -323,15 +324,10 @@ function renderLogin() {
                         </div>
 
                         <div class="alert alert-info mt-3 mb-0">
-                            <strong><i class="bi bi-info-circle"></i> Demo Credentials:</strong><br>
+                            <strong><i class="bi bi-info-circle"></i> Demo Credentials:</strong><br />
                             <small>
-                                <strong>Admin:</strong><br>
-                                Email: admin@example.com<br>
-                                Password: admin123<br>
-                                <hr class="my-1">
-                                <strong>User:</strong><br>
-                                Email: alice@example.com<br>
-                                Password: user123
+                                <strong>Admin:</strong> admin@example.com / admin123<br />
+                                <strong>User:</strong> alice@example.com / user123
                             </small>
                         </div>
                     </div>
@@ -340,42 +336,48 @@ function renderLogin() {
         </div>
     `;
 
-    document.getElementById('loginForm').addEventListener('submit', async function(e) {
-        e.preventDefault();
+    document.getElementById('btnDoLogin').addEventListener('click', async function() {
+        const email    = document.getElementById('loginEmail').value.trim();
+        const password = document.getElementById('loginPassword').value;
 
-        const email = document.getElementById('email').value.trim();
-        const password = document.getElementById('password').value;
-
+        if (!email || !password) {
+            showToast('Please enter email and password.', 'danger'); return;
+        }
         if (!isValidEmail(email)) {
-            showToast('Please enter a valid email address', 'danger');
-            return;
+            showToast('Please enter a valid email address.', 'danger'); return;
         }
 
         try {
-            const response = await fetch('http://localhost:3000/api/login', {
-                method: 'POST',
+            const res  = await fetch('http://localhost:3000/api/login', {
+                method:  'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username: email, password: password })
+                body:    JSON.stringify({ username: email, password })
             });
+            const data = await res.json();
 
-            const data = await response.json();
-
-            if (response.ok) {
+            if (res.ok) {
                 sessionStorage.setItem('authToken', data.token);
                 currentUser = getCurrentUser();
                 setAuthState(true, currentUser);
                 showToast('Login successful!', 'success');
-                setTimeout(() => {
-                    navigateTo('#/profile');
-                }, 500);
+                navigateTo('#/profile');
             } else {
-                showToast(data.error || 'Invalid credentials', 'danger');
+                showToast(data.error || 'Invalid credentials.', 'danger');
             }
         } catch (err) {
-            showToast('Cannot connect to server. Please make sure the backend is running.', 'danger');
+            showToast('Cannot connect to server. Is the backend running?', 'danger');
         }
     });
+
+    // Allow Enter key to submit
+    document.getElementById('loginPassword').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') document.getElementById('btnDoLogin').click();
+    });
 }
+
+// ============================================
+// Page: Register
+// ============================================
 
 function renderRegister() {
     const content = document.getElementById('app-content');
@@ -387,35 +389,30 @@ function renderRegister() {
                     <div class="card-body p-4">
                         <h2 class="card-title mb-4">Register Account</h2>
 
-                        <form id="registerForm">
-                            <div class="mb-3">
-                                <label for="firstName" class="form-label">First Name</label>
-                                <input type="text" class="form-control" id="firstName" required placeholder="Enter your first name">
-                            </div>
-
-                            <div class="mb-3">
-                                <label for="lastName" class="form-label">Last Name</label>
-                                <input type="text" class="form-control" id="lastName" required placeholder="Enter your last name">
-                            </div>
-
-                            <div class="mb-3">
-                                <label for="email" class="form-label">Email</label>
-                                <input type="email" class="form-control" id="email" required placeholder="Enter your email">
-                            </div>
-
-                            <div class="mb-3">
-                                <label for="password" class="form-label">Password</label>
-                                <input type="password" class="form-control" id="password" required minlength="6" placeholder="Minimum 6 characters">
-                                <div class="form-text">Password must be at least 6 characters long</div>
-                            </div>
-
-                            <div class="d-grid gap-2">
-                                <button type="submit" class="btn btn-success">
-                                    <i class="bi bi-person-plus"></i> Sign Up
-                                </button>
-                                <a href="#/" class="btn btn-outline-secondary">Cancel</a>
-                            </div>
-                        </form>
+                        <div class="mb-3">
+                            <label class="form-label">First Name</label>
+                            <input type="text" class="form-control" id="regFirstName" placeholder="Enter your first name" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Last Name</label>
+                            <input type="text" class="form-control" id="regLastName" placeholder="Enter your last name" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Email</label>
+                            <input type="email" class="form-control" id="regEmail" placeholder="Enter your email" autocomplete="email" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Password</label>
+                            <input type="password" class="form-control" id="regPassword"
+                                   placeholder="Minimum 6 characters" autocomplete="new-password" />
+                            <div class="form-text">Password must be at least 6 characters long</div>
+                        </div>
+                        <div class="d-grid gap-2">
+                            <button class="btn btn-success" id="btnDoRegister">
+                                <i class="bi bi-person-plus"></i> Sign Up
+                            </button>
+                            <a href="#/" class="btn btn-outline-secondary">Cancel</a>
+                        </div>
 
                         <div class="text-center mt-3">
                             <small class="text-muted">
@@ -428,43 +425,44 @@ function renderRegister() {
         </div>
     `;
 
-    document.getElementById('registerForm').addEventListener('submit', async function(e) {
-        e.preventDefault();
+    document.getElementById('btnDoRegister').addEventListener('click', async function() {
+        const firstName = document.getElementById('regFirstName').value.trim();
+        const lastName  = document.getElementById('regLastName').value.trim();
+        const email     = document.getElementById('regEmail').value.trim();
+        const password  = document.getElementById('regPassword').value;
 
-        const firstName = document.getElementById('firstName').value.trim();
-        const lastName = document.getElementById('lastName').value.trim();
-        const email = document.getElementById('email').value.trim();
-        const password = document.getElementById('password').value;
-
-        if (!isValidEmail(email)) {
-            showToast('Please enter a valid email address', 'danger');
-            return;
+        if (!firstName || !lastName || !email || !password) {
+            showToast('All fields are required.', 'danger'); return;
         }
-
+        if (!isValidEmail(email)) {
+            showToast('Please enter a valid email address.', 'danger'); return;
+        }
         if (password.length < 6) {
-            showToast('Password must be at least 6 characters', 'danger');
-            return;
+            showToast('Password must be at least 6 characters.', 'danger'); return;
         }
 
         try {
-            const response = await fetch('http://localhost:3000/api/register', {
-                method: 'POST',
+            const res  = await fetch('http://localhost:3000/api/register', {
+                method:  'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username: email, password, firstName, lastName })
+                body:    JSON.stringify({ username: email, password, firstName, lastName })
             });
+            const data = await res.json();
 
-            const data = await response.json();
-
-            if (response.ok) {
+            if (res.ok) {
                 navigateTo('#/pending');
             } else {
-                showToast(data.error || 'Registration failed', 'danger');
+                showToast(data.error || 'Registration failed.', 'danger');
             }
         } catch (err) {
-            showToast('Cannot connect to server. Please make sure the backend is running.', 'danger');
+            showToast('Cannot connect to server. Is the backend running?', 'danger');
         }
     });
 }
+
+// ============================================
+// Page: Pending Approval
+// ============================================
 
 function renderPending() {
     const content = document.getElementById('app-content');
@@ -478,12 +476,12 @@ function renderPending() {
                         </div>
                         <h3 class="mb-3">Account Pending Approval</h3>
                         <p class="text-muted mb-4">
-                            Your account has been registered successfully.<br>
-                            Please wait for an <strong>admin to approve</strong> your account before you can log in.
+                            Your account has been registered successfully.<br />
+                            Please wait for an <strong>admin to approve</strong> your account.
                         </p>
                         <div class="alert alert-warning">
                             <i class="bi bi-info-circle"></i>
-                            You will not be able to log in until your account is verified by an admin.
+                            You cannot log in until an admin verifies your account.
                         </div>
                         <a href="#/login" class="btn btn-primary mt-2">
                             <i class="bi bi-box-arrow-in-right"></i> Back to Login
@@ -499,14 +497,14 @@ function renderVerify() {
     navigateTo('#/pending');
 }
 
+// ============================================
+// Page: Profile
+// ============================================
+
 function renderProfile() {
     const content = document.getElementById('app-content');
-    const user = getCurrentUser();
-
-    if (!user) {
-        navigateTo('#/login');
-        return;
-    }
+    const user    = getCurrentUser();
+    if (!user) { navigateTo('#/login'); return; }
 
     content.innerHTML = `
         <div class="row justify-content-center">
@@ -514,42 +512,40 @@ function renderProfile() {
                 <div class="card shadow">
                     <div class="card-body p-4">
                         <h2 class="card-title mb-4">My Profile</h2>
-                        <div id="profileContent">
-                            <div class="text-center mb-4">
-                                <div class="display-1 text-primary mb-3">
-                                    <i class="bi bi-person-circle"></i>
-                                </div>
-                                <h3>${user.firstName} ${user.lastName}</h3>
+                        <div class="text-center mb-4">
+                            <div class="display-1 text-primary mb-3">
+                                <i class="bi bi-person-circle"></i>
                             </div>
+                            <h3>${user.firstName} ${user.lastName}</h3>
+                        </div>
 
-                            <div class="list-group list-group-flush mb-3">
-                                <div class="list-group-item">
-                                    <div class="d-flex w-100 justify-content-between align-items-center">
-                                        <strong><i class="bi bi-envelope"></i> Email</strong>
-                                        <span class="text-muted">${user.email}</span>
-                                    </div>
-                                </div>
-                                <div class="list-group-item">
-                                    <div class="d-flex w-100 justify-content-between align-items-center">
-                                        <strong><i class="bi bi-shield"></i> Role</strong>
-                                        <span class="badge bg-${user.role === 'admin' ? 'primary' : 'success'}">
-                                            ${user.role.charAt(0).toUpperCase() + user.role.slice(1)}
-                                        </span>
-                                    </div>
-                                </div>
-                                <div class="list-group-item">
-                                    <div class="d-flex w-100 justify-content-between align-items-center">
-                                        <strong><i class="bi bi-check-circle"></i> Status</strong>
-                                        <span class="badge bg-success">Verified</span>
-                                    </div>
+                        <div class="list-group list-group-flush mb-3">
+                            <div class="list-group-item">
+                                <div class="d-flex w-100 justify-content-between align-items-center">
+                                    <strong><i class="bi bi-envelope me-2"></i>Email</strong>
+                                    <span class="text-muted">${user.email}</span>
                                 </div>
                             </div>
+                            <div class="list-group-item">
+                                <div class="d-flex w-100 justify-content-between align-items-center">
+                                    <strong><i class="bi bi-shield me-2"></i>Role</strong>
+                                    <span class="badge bg-${user.role === 'admin' ? 'primary' : 'success'}">
+                                        ${user.role.charAt(0).toUpperCase() + user.role.slice(1)}
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="list-group-item">
+                                <div class="d-flex w-100 justify-content-between align-items-center">
+                                    <strong><i class="bi bi-check-circle me-2"></i>Status</strong>
+                                    <span class="badge bg-success">Verified</span>
+                                </div>
+                            </div>
+                        </div>
 
-                            <div class="d-grid">
-                                <button onclick="openEditModal()" class="btn btn-primary">
-                                    <i class="bi bi-pencil"></i> Edit Profile
-                                </button>
-                            </div>
+                        <div class="d-grid">
+                            <button onclick="openEditProfileModal()" class="btn btn-primary">
+                                <i class="bi bi-pencil"></i> Edit Profile
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -558,12 +554,12 @@ function renderProfile() {
     `;
 }
 
-function openEditModal() {
-    const user = getCurrentUser();
-    const modalsContainer = document.getElementById('modals-container');
+function openEditProfileModal() {
+    const user             = getCurrentUser();
+    const modalsContainer  = document.getElementById('modals-container');
 
     modalsContainer.innerHTML = `
-        <div class="modal fade" id="editModal" tabindex="-1">
+        <div class="modal fade" id="editProfileModal" tabindex="-1">
             <div class="modal-dialog">
                 <div class="modal-content">
                     <div class="modal-header">
@@ -571,20 +567,18 @@ function openEditModal() {
                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body">
-                        <form id="editProfileForm">
-                            <div class="mb-3">
-                                <label for="editFirstName" class="form-label">First Name</label>
-                                <input type="text" class="form-control" id="editFirstName" required value="${user.firstName}">
-                            </div>
-                            <div class="mb-3">
-                                <label for="editLastName" class="form-label">Last Name</label>
-                                <input type="text" class="form-control" id="editLastName" required value="${user.lastName}">
-                            </div>
-                            <div class="mb-3">
-                                <label for="editEmail" class="form-label">Email</label>
-                                <input type="email" class="form-control" id="editEmail" required value="${user.email}">
-                            </div>
-                        </form>
+                        <div class="mb-3">
+                            <label class="form-label">First Name</label>
+                            <input type="text" class="form-control" id="editFirstName" value="${user.firstName}" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Last Name</label>
+                            <input type="text" class="form-control" id="editLastName" value="${user.lastName}" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Email</label>
+                            <input type="email" class="form-control" id="editEmail" value="${user.email}" />
+                        </div>
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -595,46 +589,38 @@ function openEditModal() {
         </div>
     `;
 
-    const modal = new bootstrap.Modal(document.getElementById('editModal'));
-    modal.show();
+    new bootstrap.Modal(document.getElementById('editProfileModal')).show();
 }
 
 async function saveProfile() {
     const firstName = document.getElementById('editFirstName').value.trim();
-    const lastName = document.getElementById('editLastName').value.trim();
-    const email = document.getElementById('editEmail').value.trim();
+    const lastName  = document.getElementById('editLastName').value.trim();
+    const email     = document.getElementById('editEmail').value.trim();
 
     if (!firstName || !lastName || !email) {
-        showToast('Please fill in all fields', 'danger');
-        return;
+        showToast('Please fill in all fields.', 'danger'); return;
     }
-
     if (!isValidEmail(email)) {
-        showToast('Please enter a valid email', 'danger');
-        return;
+        showToast('Please enter a valid email.', 'danger'); return;
     }
 
     try {
-        const response = await fetch('http://localhost:3000/api/profile', {
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json',
-                ...getAuthHeader()
-            },
-            body: JSON.stringify({ firstName, lastName, email })
+        const res  = await fetch('http://localhost:3000/api/profile', {
+            method:  'PUT',
+            headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+            body:    JSON.stringify({ firstName, lastName, email })
         });
+        const data = await res.json();
 
-        const data = await response.json();
-
-        if (response.ok) {
+        if (res.ok) {
             sessionStorage.setItem('authToken', data.token);
             currentUser = getCurrentUser();
             setAuthState(true, currentUser);
             showToast('Profile updated successfully!', 'success');
-            bootstrap.Modal.getInstance(document.getElementById('editModal')).hide();
+            bootstrap.Modal.getInstance(document.getElementById('editProfileModal')).hide();
             renderProfile();
         } else {
-            showToast(data.error || 'Failed to update profile', 'danger');
+            showToast(data.error || 'Failed to update profile.', 'danger');
         }
     } catch (err) {
         showToast('Cannot connect to server.', 'danger');
@@ -642,7 +628,7 @@ async function saveProfile() {
 }
 
 // ============================================
-// Requests
+// Page: Requests
 // ============================================
 
 function renderRequests() {
@@ -657,14 +643,12 @@ function renderRequests() {
                 </button>
             </div>
             <div class="card-body">
-                <div id="noRequests" class="text-center py-5" style="display: none">
+                <div id="noRequests" class="text-center py-5" style="display:none;">
                     <i class="bi bi-inbox display-1 text-muted"></i>
                     <h3 class="text-muted mt-3">You have no requests yet.</h3>
-                    <button class="btn btn-primary mt-3" onclick="openNewRequestModal()">
-                        Create One
-                    </button>
+                    <button class="btn btn-primary mt-3" onclick="openNewRequestModal()">Create One</button>
                 </div>
-                <div class="table-responsive" id="requestsTable" style="display: none">
+                <div class="table-responsive" id="requestsTable" style="display:none;">
                     <table class="table table-hover">
                         <thead class="table-dark">
                             <tr>
@@ -688,13 +672,12 @@ function renderRequests() {
 let itemCounter = 0;
 
 function loadRequests() {
-    const loggedInUser = getCurrentUser();
-    const allRequests = getAll('requests');
-    const userRequests = allRequests.filter(req => req.employeeEmail === loggedInUser.email);
-
-    const noRequestsDiv = document.getElementById('noRequests');
-    const requestsTable = document.getElementById('requestsTable');
-    const tbody = document.getElementById('requestsBody');
+    const loggedInUser   = getCurrentUser();
+    const allRequests    = getAll('requests');
+    const userRequests   = allRequests.filter(r => r.employeeEmail === loggedInUser.email);
+    const noRequestsDiv  = document.getElementById('noRequests');
+    const requestsTable  = document.getElementById('requestsTable');
+    const tbody          = document.getElementById('requestsBody');
 
     if (userRequests.length === 0) {
         noRequestsDiv.style.display = 'block';
@@ -708,7 +691,9 @@ function loadRequests() {
     userRequests.sort((a, b) => new Date(b.date) - new Date(a.date));
 
     tbody.innerHTML = userRequests.map(req => {
-        const statusClass = req.status === 'Approved' ? 'success' : req.status === 'Rejected' ? 'danger' : 'warning';
+        const statusClass = req.status === 'Approved' ? 'success'
+                          : req.status === 'Rejected' ? 'danger'
+                          : 'warning';
         return `
             <tr>
                 <td>${formatDate(req.date)}</td>
@@ -717,8 +702,14 @@ function loadRequests() {
                 <td><span class="badge bg-${statusClass}">${req.status}</span></td>
                 <td>
                     <div class="btn-group btn-group-sm">
-                        <button class="btn btn-primary" onclick="viewRequest(${req.id})"><i class="bi bi-eye"></i> View</button>
-                        ${req.status === 'Pending' ? `<button class="btn btn-danger" onclick="deleteRequest(${req.id})"><i class="bi bi-x-circle"></i> Cancel</button>` : ''}
+                        <button class="btn btn-primary" onclick="viewRequest(${req.id})">
+                            <i class="bi bi-eye"></i> View
+                        </button>
+                        ${req.status === 'Pending'
+                            ? `<button class="btn btn-danger" onclick="deleteRequest(${req.id})">
+                                   <i class="bi bi-x-circle"></i> Cancel
+                               </button>`
+                            : ''}
                     </div>
                 </td>
             </tr>
@@ -739,24 +730,23 @@ function openNewRequestModal() {
                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body">
-                        <form id="requestForm">
-                            <div class="mb-3">
-                                <label class="form-label">Type</label>
-                                <select class="form-select" id="requestType" required>
-                                    <option value="">Select type...</option>
-                                    <option value="Equipment">Equipment</option>
-                                    <option value="Leave">Leave</option>
-                                    <option value="Resources">Resources</option>
-                                </select>
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">Items</label>
-                                <div id="itemsList"></div>
-                                <button type="button" class="btn btn-sm btn-outline-primary mt-2" onclick="addFormItem()">
-                                    <i class="bi bi-plus"></i> Add Item
-                                </button>
-                            </div>
-                        </form>
+                        <div class="mb-3">
+                            <label class="form-label">Type</label>
+                            <select class="form-select" id="requestType">
+                                <option value="">Select type…</option>
+                                <option value="Equipment">Equipment</option>
+                                <option value="Leave">Leave</option>
+                                <option value="Resources">Resources</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Items</label>
+                            <div id="itemsList"></div>
+                            <button type="button" class="btn btn-sm btn-outline-primary mt-2"
+                                    onclick="addFormItem()">
+                                <i class="bi bi-plus"></i> Add Item
+                            </button>
+                        </div>
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -767,21 +757,22 @@ function openNewRequestModal() {
         </div>
     `;
 
-    const modal = new bootstrap.Modal(document.getElementById('requestModal'));
-    modal.show();
+    new bootstrap.Modal(document.getElementById('requestModal')).show();
     addFormItem();
 }
 
 function addFormItem() {
     itemCounter++;
     const itemsList = document.getElementById('itemsList');
-    const itemDiv = document.createElement('div');
+    const itemDiv   = document.createElement('div');
     itemDiv.className = 'input-group mb-2';
-    itemDiv.id = `item-${itemCounter}`;
+    itemDiv.id        = `item-${itemCounter}`;
     itemDiv.innerHTML = `
-        <input type="text" class="form-control item-name" placeholder="Item name" required>
-        <input type="number" class="form-control item-quantity" placeholder="Qty" value="1" min="1" required style="max-width: 100px;">
-        <button type="button" class="btn btn-outline-danger" onclick="removeItem('item-${itemCounter}')">
+        <input type="text"   class="form-control item-name"     placeholder="Item name" />
+        <input type="number" class="form-control item-quantity"  placeholder="Qty" value="1" min="1"
+               style="max-width:100px;" />
+        <button type="button" class="btn btn-outline-danger"
+                onclick="removeItem('item-${itemCounter}')">
             <i class="bi bi-x"></i>
         </button>
     `;
@@ -789,60 +780,53 @@ function addFormItem() {
 }
 
 function removeItem(itemId) {
-    const itemDiv = document.getElementById(itemId);
     const itemsList = document.getElementById('itemsList');
     if (itemsList.children.length > 1) {
-        itemDiv.remove();
+        document.getElementById(itemId).remove();
     } else {
-        showToast('At least one item is required', 'warning');
+        showToast('At least one item is required.', 'warning');
     }
 }
 
 function submitRequest() {
     const type = document.getElementById('requestType').value;
-    if (!type) {
-        showToast('Please select a request type', 'danger');
-        return;
-    }
+    if (!type) { showToast('Please select a request type.', 'danger'); return; }
 
     const itemRows = document.querySelectorAll('#itemsList .input-group');
-    const items = [];
-    for (let row of itemRows) {
-        const name = row.querySelector('.item-name').value.trim();
+    const items    = [];
+
+    for (const row of itemRows) {
+        const name     = row.querySelector('.item-name').value.trim();
         const quantity = parseInt(row.querySelector('.item-quantity').value);
         if (!name || !quantity || quantity < 1) {
-            showToast('Please fill in all item fields correctly', 'danger');
-            return;
+            showToast('Please fill in all item fields correctly.', 'danger'); return;
         }
         items.push({ name, quantity });
     }
 
-    if (items.length === 0) {
-        showToast('Please add at least one item', 'danger');
-        return;
-    }
+    if (items.length === 0) { showToast('Please add at least one item.', 'danger'); return; }
 
     const loggedInUser = getCurrentUser();
-    const newRequest = {
-        type: type,
-        items: items,
-        status: 'Pending',
+    addItem('requests', {
+        type,
+        items,
+        status:        'Pending',
         employeeEmail: loggedInUser.email,
-        date: new Date().toISOString(),
-    };
+        date:          new Date().toISOString()
+    });
 
-    addItem('requests', newRequest);
     showToast('Request submitted successfully!', 'success');
     bootstrap.Modal.getInstance(document.getElementById('requestModal')).hide();
     loadRequests();
 }
 
 function viewRequest(id) {
-    const request = getById('requests', id);
-    const statusClass = request.status === 'Approved' ? 'success' : request.status === 'Rejected' ? 'danger' : 'warning';
+    const request     = getById('requests', id);
+    const statusClass = request.status === 'Approved' ? 'success'
+                      : request.status === 'Rejected' ? 'danger'
+                      : 'warning';
 
-    const modalsContainer = document.getElementById('modals-container');
-    modalsContainer.innerHTML = `
+    document.getElementById('modals-container').innerHTML = `
         <div class="modal fade" id="viewRequestModal" tabindex="-1">
             <div class="modal-dialog">
                 <div class="modal-content">
@@ -851,18 +835,20 @@ function viewRequest(id) {
                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body">
-                        <div class="mb-3"><strong>Type:</strong> ${request.type}</div>
-                        <div class="mb-3"><strong>Date:</strong> ${formatDate(request.date)}</div>
-                        <div class="mb-3"><strong>Status:</strong> <span class="badge bg-${statusClass}">${request.status}</span></div>
-                        <div class="mb-3">
-                            <strong>Items:</strong>
-                            <table class="table table-sm mt-2">
-                                <thead><tr><th>Item Name</th><th>Quantity</th></tr></thead>
-                                <tbody>
-                                    ${request.items.map(item => `<tr><td>${item.name}</td><td>${item.quantity}</td></tr>`).join('')}
-                                </tbody>
-                            </table>
-                        </div>
+                        <p><strong>Type:</strong> ${request.type}</p>
+                        <p><strong>Date:</strong> ${formatDate(request.date)}</p>
+                        <p><strong>Status:</strong>
+                            <span class="badge bg-${statusClass}">${request.status}</span>
+                        </p>
+                        <strong>Items:</strong>
+                        <table class="table table-sm mt-2">
+                            <thead><tr><th>Item Name</th><th>Quantity</th></tr></thead>
+                            <tbody>
+                                ${request.items.map(i =>
+                                    `<tr><td>${i.name}</td><td>${i.quantity}</td></tr>`
+                                ).join('')}
+                            </tbody>
+                        </table>
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
@@ -871,46 +857,27 @@ function viewRequest(id) {
             </div>
         </div>
     `;
-
-    const modal = new bootstrap.Modal(document.getElementById('viewRequestModal'));
-    modal.show();
+    new bootstrap.Modal(document.getElementById('viewRequestModal')).show();
 }
 
 function deleteRequest(id) {
     if (!confirm('Are you sure you want to cancel this request?')) return;
     deleteItem('requests', id);
-    showToast('Request cancelled successfully', 'success');
+    showToast('Request cancelled.', 'success');
     loadRequests();
 }
 
 // ============================================
-// Admin Dashboard
-// ============================================
-
-async function loadAdminDashboard() {
-    const res = await fetch('http://localhost:3000/api/admin/dashboard', {
-        headers: getAuthHeader()
-    });
-    if (res.ok) {
-        const data = await res.json();
-        document.getElementById('content').innerText = data.message;
-    } else {
-        document.getElementById('content').innerText = 'Access denied!';
-    }
-}
-
-// ============================================
-// Employees
+// Page: Employees (Admin)
 // ============================================
 
 function renderEmployees() {
     const content = document.getElementById('app-content');
-
     content.innerHTML = `
         <div class="card shadow">
             <div class="card-header bg-white d-flex justify-content-between align-items-center">
                 <h4 class="mb-0"><i class="bi bi-people"></i> Employees</h4>
-                <button class="btn btn-success" onclick="openAddModal('employee')">
+                <button class="btn btn-success" onclick="openAddEmployeeModal()">
                     <i class="bi bi-plus-circle"></i> Add Employee
                 </button>
             </div>
@@ -920,7 +887,7 @@ function renderEmployees() {
                         <thead class="table-dark">
                             <tr>
                                 <th>ID</th>
-                                <th>Name</th>
+                                <th>Full Name</th>
                                 <th>Position</th>
                                 <th>Department</th>
                                 <th>Hire Date</th>
@@ -933,17 +900,17 @@ function renderEmployees() {
             </div>
         </div>
     `;
-
     renderEmployeesTable();
 }
 
 function renderEmployeesTable() {
-    const employees = getAll('employees');
+    const employees   = getAll('employees');
     const departments = getAll('departments');
-    const tbody = document.getElementById('employeesBody');
+    const tbody       = document.getElementById('employeesBody');
+    if (!tbody) return;
 
     if (employees.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No employees found</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No employees found.</td></tr>';
         return;
     }
 
@@ -955,11 +922,15 @@ function renderEmployeesTable() {
                 <td>${emp.fullName || emp.userEmail}</td>
                 <td>${emp.position}</td>
                 <td>${dept ? dept.name : 'Unknown'}</td>
-                <td>${emp.hireDate ? formatDate(emp.hireDate) : '-'}</td>
+                <td>${emp.hireDate ? formatDate(emp.hireDate) : '—'}</td>
                 <td>
                     <div class="btn-group btn-group-sm">
-                        <button class="btn btn-primary" onclick="editEmployee(${emp.id})"><i class="bi bi-pencil"></i></button>
-                        <button class="btn btn-danger" onclick="deleteEmployee(${emp.id})"><i class="bi bi-trash"></i></button>
+                        <button class="btn btn-primary"  onclick="editEmployee(${emp.id})">
+                            <i class="bi bi-pencil"></i>
+                        </button>
+                        <button class="btn btn-danger" onclick="deleteEmployee(${emp.id})">
+                            <i class="bi bi-trash"></i>
+                        </button>
                     </div>
                 </td>
             </tr>
@@ -967,109 +938,52 @@ function renderEmployeesTable() {
     }).join('');
 }
 
-function openAddModal(type) {
-    if (type === 'employee') {
-        const modalsContainer = document.getElementById('modals-container');
-        const departments = getAll('departments');
-
-        modalsContainer.innerHTML = `
-            <div class="modal fade" id="employeeModal" tabindex="-1">
-                <div class="modal-dialog">
-                    <div class="modal-content">
-                        <div class="modal-header">
-                            <h5 class="modal-title">Add Employee</h5>
-                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                        </div>
-                        <div class="modal-body">
-                            <form id="employeeForm">
-                                <input type="hidden" id="employeeId">
-                                <div class="mb-3">
-                                    <label class="form-label">Employee ID</label>
-                                    <input type="text" class="form-control" id="employeeNumber" required placeholder="e.g., EMP001">
-                                </div>
-                                <div class="mb-3">
-                                    <label class="form-label">Full Name</label>
-                                    <input type="text" class="form-control" id="fullName" required placeholder="e.g., John Doe">
-                                </div>
-                                <div class="mb-3">
-                                    <label class="form-label">Email</label>
-                                    <input type="email" class="form-control" id="userEmail" required placeholder="employee@example.com">
-                                </div>
-                                <div class="mb-3">
-                                    <label class="form-label">Position</label>
-                                    <input type="text" class="form-control" id="position" required placeholder="e.g., Software Engineer">
-                                </div>
-                                <div class="mb-3">
-                                    <label class="form-label">Department</label>
-                                    <select class="form-select" id="departmentId" required>
-                                        <option value="">Select department...</option>
-                                        ${departments.map(dept => `<option value="${dept.id}">${dept.name}</option>`).join('')}
-                                    </select>
-                                </div>
-                                <div class="mb-3">
-                                    <label class="form-label">Hire Date</label>
-                                    <input type="date" class="form-control" id="hireDate" required value="${new Date().toISOString().split('T')[0]}">
-                                </div>
-                            </form>
-                        </div>
-                        <div class="modal-footer">
-                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                            <button type="button" class="btn btn-primary" onclick="saveEmployee()">Save</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
-
-        const modal = new bootstrap.Modal(document.getElementById('employeeModal'));
-        modal.show();
-    }
-}
-
-function editEmployee(id) {
-    const emp = getById('employees', id);
+function buildEmployeeModalHTML(title, emp = null) {
     const departments = getAll('departments');
-    const modalsContainer = document.getElementById('modals-container');
-
-    modalsContainer.innerHTML = `
+    return `
         <div class="modal fade" id="employeeModal" tabindex="-1">
             <div class="modal-dialog">
                 <div class="modal-content">
                     <div class="modal-header">
-                        <h5 class="modal-title">Edit Employee</h5>
+                        <h5 class="modal-title">${title}</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body">
-                        <form id="employeeForm">
-                            <input type="hidden" id="employeeId" value="${emp.id}">
-                            <div class="mb-3">
-                                <label class="form-label">Employee ID</label>
-                                <input type="text" class="form-control" id="employeeNumber" required value="${emp.employeeNumber}">
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">Full Name</label>
-                                <input type="text" class="form-control" id="fullName" required value="${emp.fullName || ''}">
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">Email</label>
-                                <input type="email" class="form-control" id="userEmail" required value="${emp.userEmail}">
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">Position</label>
-                                <input type="text" class="form-control" id="position" required value="${emp.position}">
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">Department</label>
-                                <select class="form-select" id="departmentId" required>
-                                    <option value="">Select department...</option>
-                                    ${departments.map(dept => `<option value="${dept.id}" ${dept.id === emp.departmentId ? 'selected' : ''}>${dept.name}</option>`).join('')}
-                                </select>
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">Hire Date</label>
-                                <input type="date" class="form-control" id="hireDate" required value="${emp.hireDate}">
-                            </div>
-                        </form>
+                        <input type="hidden" id="employeeId" value="${emp ? emp.id : ''}">
+                        <div class="mb-3">
+                            <label class="form-label">Employee ID</label>
+                            <input type="text" class="form-control" id="employeeNumber"
+                                   value="${emp ? emp.employeeNumber : ''}" placeholder="e.g., EMP001" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Full Name</label>
+                            <input type="text" class="form-control" id="fullName"
+                                   value="${emp ? (emp.fullName || '') : ''}" placeholder="e.g., Juan Dela Cruz" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Email</label>
+                            <input type="email" class="form-control" id="userEmail"
+                                   value="${emp ? emp.userEmail : ''}" placeholder="employee@example.com" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Position</label>
+                            <input type="text" class="form-control" id="position"
+                                   value="${emp ? emp.position : ''}" placeholder="e.g., Software Engineer" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Department</label>
+                            <select class="form-select" id="departmentId">
+                                <option value="">Select department…</option>
+                                ${departments.map(d =>
+                                    `<option value="${d.id}" ${emp && emp.departmentId === d.id ? 'selected' : ''}>${d.name}</option>`
+                                ).join('')}
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Hire Date</label>
+                            <input type="date" class="form-control" id="hireDate"
+                                   value="${emp ? emp.hireDate : new Date().toISOString().split('T')[0]}" />
+                        </div>
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -1079,41 +993,45 @@ function editEmployee(id) {
             </div>
         </div>
     `;
+}
 
-    const modal = new bootstrap.Modal(document.getElementById('employeeModal'));
-    modal.show();
+function openAddEmployeeModal() {
+    document.getElementById('modals-container').innerHTML = buildEmployeeModalHTML('Add Employee');
+    new bootstrap.Modal(document.getElementById('employeeModal')).show();
+}
+
+function editEmployee(id) {
+    const emp = getById('employees', id);
+    document.getElementById('modals-container').innerHTML = buildEmployeeModalHTML('Edit Employee', emp);
+    new bootstrap.Modal(document.getElementById('employeeModal')).show();
 }
 
 function saveEmployee() {
-    const id = document.getElementById('employeeId').value;
+    const id             = document.getElementById('employeeId').value;
     const employeeNumber = document.getElementById('employeeNumber').value.trim();
-    const fullName = document.getElementById('fullName').value.trim();
-    const userEmail = document.getElementById('userEmail').value.trim();
-    const position = document.getElementById('position').value.trim();
-    const departmentId = parseInt(document.getElementById('departmentId').value);
-    const hireDate = document.getElementById('hireDate').value;
+    const fullName       = document.getElementById('fullName').value.trim();
+    const userEmail      = document.getElementById('userEmail').value.trim();
+    const position       = document.getElementById('position').value.trim();
+    const departmentId   = parseInt(document.getElementById('departmentId').value);
+    const hireDate       = document.getElementById('hireDate').value;
 
     if (!employeeNumber || !fullName || !userEmail || !position || !departmentId || !hireDate) {
-        showToast('Please fill in all fields', 'danger');
-        return;
+        showToast('Please fill in all fields.', 'danger'); return;
     }
 
-    const existing = getAll('employees').find(e =>
+    const duplicate = getAll('employees').find(e =>
         e.employeeNumber === employeeNumber && (!id || e.id !== parseInt(id))
     );
-    if (existing) {
-        showToast('Employee ID already exists', 'danger');
-        return;
-    }
+    if (duplicate) { showToast('Employee ID already exists.', 'danger'); return; }
 
-    const employeeData = { employeeNumber, fullName, userEmail, position, departmentId, hireDate };
+    const data = { employeeNumber, fullName, userEmail, position, departmentId, hireDate };
 
     if (id) {
-        updateItem('employees', id, employeeData);
-        showToast('Employee updated successfully!', 'success');
+        updateItem('employees', id, data);
+        showToast('Employee updated.', 'success');
     } else {
-        addItem('employees', employeeData);
-        showToast('Employee created successfully!', 'success');
+        addItem('employees', data);
+        showToast('Employee created.', 'success');
     }
 
     bootstrap.Modal.getInstance(document.getElementById('employeeModal')).hide();
@@ -1122,20 +1040,18 @@ function saveEmployee() {
 
 function deleteEmployee(id) {
     const emp = getById('employees', id);
-    if (!confirm(`Are you sure you want to delete employee ${emp.employeeNumber}?`)) return;
+    if (!confirm(`Delete employee ${emp.employeeNumber}?`)) return;
     deleteItem('employees', id);
-    showToast('Employee deleted successfully!', 'success');
+    showToast('Employee deleted.', 'success');
     renderEmployeesTable();
 }
 
 // ============================================
-// Accounts — All operations go through backend
-// FIX #1 & #2: No localStorage for accounts whatsoever!
+// Page: Accounts (Admin — all via backend API)
 // ============================================
 
 async function renderAccounts() {
     const content = document.getElementById('app-content');
-
     content.innerHTML = `
         <div class="card shadow">
             <div class="card-header bg-white d-flex justify-content-between align-items-center">
@@ -1158,7 +1074,7 @@ async function renderAccounts() {
                         </thead>
                         <tbody id="accountsBody">
                             <tr><td colspan="5" class="text-center">
-                                <div class="spinner-border spinner-border-sm"></div> Loading...
+                                <div class="spinner-border spinner-border-sm"></div> Loading…
                             </td></tr>
                         </tbody>
                     </table>
@@ -1166,75 +1082,74 @@ async function renderAccounts() {
             </div>
         </div>
     `;
-
     await renderAccountsList();
 }
 
 async function renderAccountsList() {
-    const tbody = document.getElementById('accountsBody');
-    const loggedInUser = getCurrentUser();
+    const tbody         = document.getElementById('accountsBody');
+    const loggedInUser  = getCurrentUser();
 
     try {
-        const response = await fetch('http://localhost:3000/api/users', {
-            headers: getAuthHeader()
-        });
+        const res = await fetch('http://localhost:3000/api/users', { headers: getAuthHeader() });
 
-        if (!response.ok) {
-            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger">Failed to load accounts</td></tr>';
+        if (!res.ok) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger">Failed to load accounts.</td></tr>';
             return;
         }
 
-        const accounts = await response.json();
+        const accounts = await res.json();
 
         if (accounts.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No accounts found</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No accounts found.</td></tr>';
             return;
         }
 
-        tbody.innerHTML = accounts.map(account => `
-            <tr class="${!account.verified ? 'table-warning' : ''}">
+        tbody.innerHTML = accounts.map(acc => `
+            <tr class="${!acc.verified ? 'table-warning' : ''}">
                 <td>
-                    <strong>${account.firstName} ${account.lastName}</strong>
-                    ${!account.verified ? '<span class="badge bg-warning ms-1">Pending</span>' : ''}
+                    <strong>${acc.firstName} ${acc.lastName}</strong>
+                    ${!acc.verified ? '<span class="badge bg-warning ms-1">Pending</span>' : ''}
                 </td>
-                <td>${account.username}</td>
-                <td><span class="badge bg-${account.role === 'admin' ? 'primary' : 'success'}">${account.role.charAt(0).toUpperCase() + account.role.slice(1)}</span></td>
+                <td>${acc.username}</td>
                 <td>
-                    ${account.verified
+                    <span class="badge bg-${acc.role === 'admin' ? 'primary' : 'success'}">
+                        ${acc.role.charAt(0).toUpperCase() + acc.role.slice(1)}
+                    </span>
+                </td>
+                <td>
+                    ${acc.verified
                         ? '<span class="badge bg-success"><i class="bi bi-check"></i> Verified</span>'
-                        : '<span class="badge bg-warning text-dark"><i class="bi bi-hourglass-split"></i> Pending</span>'
-                    }
+                        : '<span class="badge bg-warning text-dark"><i class="bi bi-hourglass-split"></i> Pending</span>'}
                 </td>
                 <td>
                     <div class="btn-group btn-group-sm">
-                        <button class="btn btn-primary" onclick="editAccount(${account.id}, '${account.firstName}', '${account.lastName}', '${account.username}', '${account.role}', ${account.verified})">
+                        <button class="btn btn-primary"
+                                onclick="editAccount(${acc.id},'${acc.firstName}','${acc.lastName}','${acc.username}','${acc.role}',${acc.verified})">
                             <i class="bi bi-pencil"></i> Edit
                         </button>
-                        <button class="btn btn-warning" onclick="openResetPasswordModal(${account.id})">
-                            <i class="bi bi-key"></i> Reset Password
+                        <button class="btn btn-warning" onclick="openResetPasswordModal(${acc.id})">
+                            <i class="bi bi-key"></i> Reset
                         </button>
-                        ${account.username !== loggedInUser.email
-                            ? `<button class="btn btn-danger" onclick="deleteAccount(${account.id}, '${account.firstName} ${account.lastName}')">
-                                <i class="bi bi-trash"></i> Delete
+                        ${acc.username !== loggedInUser.email
+                            ? `<button class="btn btn-danger"
+                                       onclick="deleteAccount(${acc.id},'${acc.firstName} ${acc.lastName}')">
+                                   <i class="bi bi-trash"></i> Delete
                                </button>`
                             : `<button class="btn btn-outline-secondary" disabled title="Cannot delete yourself">
-                                <i class="bi bi-trash"></i>
+                                   <i class="bi bi-trash"></i>
                                </button>`
                         }
                     </div>
                 </td>
             </tr>
         `).join('');
-
     } catch (err) {
-        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger">Cannot connect to server</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger">Cannot connect to server.</td></tr>';
     }
 }
 
 function openAddAccountModal() {
-    const modalsContainer = document.getElementById('modals-container');
-
-    modalsContainer.innerHTML = `
+    document.getElementById('modals-container').innerHTML = `
         <div class="modal fade" id="accountModal" tabindex="-1">
             <div class="modal-dialog">
                 <div class="modal-content">
@@ -1243,37 +1158,35 @@ function openAddAccountModal() {
                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body">
-                        <form id="accountForm">
-                            <input type="hidden" id="accountId" value="">
-                            <div class="mb-3">
-                                <label class="form-label">First Name</label>
-                                <input type="text" class="form-control" id="accFirstName" required>
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">Last Name</label>
-                                <input type="text" class="form-control" id="accLastName" required>
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">Email</label>
-                                <input type="email" class="form-control" id="accEmail" required>
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">Password</label>
-                                <input type="password" class="form-control" id="accPassword" required minlength="6">
-                                <div class="form-text">Minimum 6 characters — will be securely hashed</div>
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">Role</label>
-                                <select class="form-select" id="accRole" required>
-                                    <option value="user">User</option>
-                                    <option value="admin">Admin</option>
-                                </select>
-                            </div>
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="accVerified">
-                                <label class="form-check-label" for="accVerified">Verified</label>
-                            </div>
-                        </form>
+                        <input type="hidden" id="accountId" value="">
+                        <div class="mb-3">
+                            <label class="form-label">First Name</label>
+                            <input type="text" class="form-control" id="accFirstName" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Last Name</label>
+                            <input type="text" class="form-control" id="accLastName" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Email</label>
+                            <input type="email" class="form-control" id="accEmail" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Password</label>
+                            <input type="password" class="form-control" id="accPassword" />
+                            <div class="form-text">Minimum 6 characters — hashed on the backend</div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Role</label>
+                            <select class="form-select" id="accRole">
+                                <option value="user">User</option>
+                                <option value="admin">Admin</option>
+                            </select>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="accVerified">
+                            <label class="form-check-label" for="accVerified">Verified</label>
+                        </div>
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -1283,15 +1196,11 @@ function openAddAccountModal() {
             </div>
         </div>
     `;
-
-    const modal = new bootstrap.Modal(document.getElementById('accountModal'));
-    modal.show();
+    new bootstrap.Modal(document.getElementById('accountModal')).show();
 }
 
 function editAccount(id, firstName, lastName, email, role, verified) {
-    const modalsContainer = document.getElementById('modals-container');
-
-    modalsContainer.innerHTML = `
+    document.getElementById('modals-container').innerHTML = `
         <div class="modal fade" id="accountModal" tabindex="-1">
             <div class="modal-dialog">
                 <div class="modal-content">
@@ -1300,32 +1209,30 @@ function editAccount(id, firstName, lastName, email, role, verified) {
                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body">
-                        <form id="accountForm">
-                            <input type="hidden" id="accountId" value="${id}">
-                            <div class="mb-3">
-                                <label class="form-label">First Name</label>
-                                <input type="text" class="form-control" id="accFirstName" required value="${firstName}">
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">Last Name</label>
-                                <input type="text" class="form-control" id="accLastName" required value="${lastName}">
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">Email</label>
-                                <input type="email" class="form-control" id="accEmail" required value="${email}">
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">Role</label>
-                                <select class="form-select" id="accRole" required>
-                                    <option value="user" ${role === 'user' ? 'selected' : ''}>User</option>
-                                    <option value="admin" ${role === 'admin' ? 'selected' : ''}>Admin</option>
-                                </select>
-                            </div>
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="accVerified" ${verified ? 'checked' : ''}>
-                                <label class="form-check-label" for="accVerified">Verified</label>
-                            </div>
-                        </form>
+                        <input type="hidden" id="accountId" value="${id}">
+                        <div class="mb-3">
+                            <label class="form-label">First Name</label>
+                            <input type="text" class="form-control" id="accFirstName" value="${firstName}" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Last Name</label>
+                            <input type="text" class="form-control" id="accLastName" value="${lastName}" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Email</label>
+                            <input type="email" class="form-control" id="accEmail" value="${email}" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Role</label>
+                            <select class="form-select" id="accRole">
+                                <option value="user"  ${role === 'user'  ? 'selected' : ''}>User</option>
+                                <option value="admin" ${role === 'admin' ? 'selected' : ''}>Admin</option>
+                            </select>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="accVerified" ${verified ? 'checked' : ''}>
+                            <label class="form-check-label" for="accVerified">Verified</label>
+                        </div>
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -1335,68 +1242,58 @@ function editAccount(id, firstName, lastName, email, role, verified) {
             </div>
         </div>
     `;
-
-    const modal = new bootstrap.Modal(document.getElementById('accountModal'));
-    modal.show();
+    new bootstrap.Modal(document.getElementById('accountModal')).show();
 }
 
 async function saveAccount() {
-    const id = document.getElementById('accountId').value;
+    const id        = document.getElementById('accountId').value;
     const firstName = document.getElementById('accFirstName').value.trim();
-    const lastName = document.getElementById('accLastName').value.trim();
-    const email = document.getElementById('accEmail').value.trim();
-    const password = document.getElementById('accPassword') ? document.getElementById('accPassword').value : null;
-    const role = document.getElementById('accRole').value;
-    const verified = document.getElementById('accVerified').checked;
+    const lastName  = document.getElementById('accLastName').value.trim();
+    const email     = document.getElementById('accEmail').value.trim();
+    const password  = document.getElementById('accPassword') ? document.getElementById('accPassword').value : null;
+    const role      = document.getElementById('accRole').value;
+    const verified  = document.getElementById('accVerified').checked;
 
-    if (!firstName || !lastName || !email || !role) {
-        showToast('Please fill in all fields', 'danger');
-        return;
+    if (!firstName || !lastName || !email) {
+        showToast('Please fill in all required fields.', 'danger'); return;
     }
-
     if (!isValidEmail(email)) {
-        showToast('Please enter a valid email', 'danger');
-        return;
+        showToast('Please enter a valid email.', 'danger'); return;
     }
 
     try {
-        let response;
-
+        let res;
         if (id) {
-            response = await fetch(`http://localhost:3000/api/users/${id}`, {
-                method: 'PUT',
+            res = await fetch(`http://localhost:3000/api/users/${id}`, {
+                method:  'PUT',
                 headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
-                body: JSON.stringify({ firstName, lastName, email, role, verified })
+                body:    JSON.stringify({ firstName, lastName, email, role, verified })
             });
         } else {
             if (!password || password.length < 6) {
-                showToast('Password must be at least 6 characters', 'danger');
-                return;
+                showToast('Password must be at least 6 characters.', 'danger'); return;
             }
-            response = await fetch('http://localhost:3000/api/users', {
-                method: 'POST',
+            res = await fetch('http://localhost:3000/api/users', {
+                method:  'POST',
                 headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
-                body: JSON.stringify({ username: email, password, firstName, lastName, role, verified })
+                body:    JSON.stringify({ username: email, password, firstName, lastName, role, verified })
             });
         }
-
-        const data = await response.json();
-
-        if (response.ok) {
-            showToast(id ? 'Account updated successfully!' : 'Account created successfully!', 'success');
+        const data = await res.json();
+        if (res.ok) {
+            showToast(id ? 'Account updated!' : 'Account created!', 'success');
             bootstrap.Modal.getInstance(document.getElementById('accountModal')).hide();
             await renderAccountsList();
         } else {
-            showToast(data.error || 'Operation failed', 'danger');
+            showToast(data.error || 'Operation failed.', 'danger');
         }
     } catch (err) {
-        showToast('Cannot connect to server', 'danger');
+        showToast('Cannot connect to server.', 'danger');
     }
 }
 
 function openResetPasswordModal(id) {
-    const modalsContainer = document.getElementById('modals-container');
-    modalsContainer.innerHTML = `
+    document.getElementById('modals-container').innerHTML = `
         <div class="modal fade" id="resetPasswordModal" tabindex="-1">
             <div class="modal-dialog">
                 <div class="modal-content">
@@ -1408,81 +1305,72 @@ function openResetPasswordModal(id) {
                         <input type="hidden" id="resetAccountId" value="${id}">
                         <div class="mb-3">
                             <label class="form-label">New Password</label>
-                            <input type="password" class="form-control" id="newPassword" required minlength="6">
-                            <div class="form-text">Minimum 6 characters — will be securely hashed</div>
+                            <input type="password" class="form-control" id="newPassword" />
+                            <div class="form-text">Minimum 6 characters — hashed on the backend</div>
                         </div>
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                        <button type="button" class="btn btn-primary" onclick="resetPassword()">Reset Password</button>
+                        <button type="button" class="btn btn-primary" onclick="resetPassword()">Reset</button>
                     </div>
                 </div>
             </div>
         </div>
     `;
-
-    const modal = new bootstrap.Modal(document.getElementById('resetPasswordModal'));
-    modal.show();
+    new bootstrap.Modal(document.getElementById('resetPasswordModal')).show();
 }
 
 async function resetPassword() {
-    const id = document.getElementById('resetAccountId').value;
+    const id          = document.getElementById('resetAccountId').value;
     const newPassword = document.getElementById('newPassword').value;
 
     if (!newPassword || newPassword.length < 6) {
-        showToast('Password must be at least 6 characters', 'danger');
-        return;
+        showToast('Password must be at least 6 characters.', 'danger'); return;
     }
 
     try {
-        const response = await fetch(`http://localhost:3000/api/users/${id}/password`, {
-            method: 'PUT',
+        const res  = await fetch(`http://localhost:3000/api/users/${id}/password`, {
+            method:  'PUT',
             headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
-            body: JSON.stringify({ password: newPassword })
+            body:    JSON.stringify({ password: newPassword })
         });
-
-        const data = await response.json();
-
-        if (response.ok) {
-            showToast('Password reset successfully! It is now hashed on the backend.', 'success');
+        const data = await res.json();
+        if (res.ok) {
+            showToast('Password reset successfully!', 'success');
             bootstrap.Modal.getInstance(document.getElementById('resetPasswordModal')).hide();
         } else {
-            showToast(data.error || 'Failed to reset password', 'danger');
+            showToast(data.error || 'Failed to reset password.', 'danger');
         }
     } catch (err) {
-        showToast('Cannot connect to server', 'danger');
+        showToast('Cannot connect to server.', 'danger');
     }
 }
 
 async function deleteAccount(id, name) {
     if (!confirm(`Are you sure you want to delete ${name}?`)) return;
-
     try {
-        const response = await fetch(`http://localhost:3000/api/users/${id}`, {
-            method: 'DELETE',
+        const res  = await fetch(`http://localhost:3000/api/users/${id}`, {
+            method:  'DELETE',
             headers: getAuthHeader()
         });
-
-        const data = await response.json();
-
-        if (response.ok) {
-            showToast('Account deleted successfully!', 'success');
+        const data = await res.json();
+        if (res.ok) {
+            showToast('Account deleted.', 'success');
             await renderAccountsList();
         } else {
-            showToast(data.error || 'Failed to delete account', 'danger');
+            showToast(data.error || 'Failed to delete account.', 'danger');
         }
     } catch (err) {
-        showToast('Cannot connect to server', 'danger');
+        showToast('Cannot connect to server.', 'danger');
     }
 }
 
 // ============================================
-// Departments
+// Page: Departments (Admin — localStorage)
 // ============================================
 
 function renderDepartments() {
     const content = document.getElementById('app-content');
-
     content.innerHTML = `
         <div class="card shadow">
             <div class="card-header bg-white d-flex justify-content-between align-items-center">
@@ -1495,11 +1383,7 @@ function renderDepartments() {
                 <div class="table-responsive">
                     <table class="table table-hover">
                         <thead class="table-dark">
-                            <tr>
-                                <th>Name</th>
-                                <th>Description</th>
-                                <th>Actions</th>
-                            </tr>
+                            <tr><th>Name</th><th>Description</th><th>Actions</th></tr>
                         </thead>
                         <tbody id="departmentsBody"></tbody>
                     </table>
@@ -1507,56 +1391,58 @@ function renderDepartments() {
             </div>
         </div>
     `;
-
     loadDepartments();
 }
 
 function loadDepartments() {
     const departments = getAll('departments');
-    const tbody = document.getElementById('departmentsBody');
+    const tbody       = document.getElementById('departmentsBody');
+    if (!tbody) return;
 
     if (departments.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">No departments found</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">No departments found.</td></tr>';
         return;
     }
 
     tbody.innerHTML = departments.map(dept => `
         <tr>
             <td><strong>${dept.name}</strong></td>
-            <td>${dept.description || '-'}</td>
+            <td>${dept.description || '—'}</td>
             <td>
                 <div class="btn-group btn-group-sm">
-                    <button class="btn btn-primary" onclick="editDepartment(${dept.id})"><i class="bi bi-pencil"></i> Edit</button>
-                    <button class="btn btn-danger" onclick="deleteDepartment(${dept.id})"><i class="bi bi-trash"></i> Delete</button>
+                    <button class="btn btn-primary" onclick="editDepartment(${dept.id})">
+                        <i class="bi bi-pencil"></i> Edit
+                    </button>
+                    <button class="btn btn-danger" onclick="deleteDepartment(${dept.id})">
+                        <i class="bi bi-trash"></i> Delete
+                    </button>
                 </div>
             </td>
         </tr>
     `).join('');
 }
 
-function openAddDepartmentModal() {
-    const modalsContainer = document.getElementById('modals-container');
-
-    modalsContainer.innerHTML = `
+function buildDeptModalHTML(title, dept = null) {
+    return `
         <div class="modal fade" id="departmentModal" tabindex="-1">
             <div class="modal-dialog">
                 <div class="modal-content">
                     <div class="modal-header">
-                        <h5 class="modal-title">Add Department</h5>
+                        <h5 class="modal-title">${title}</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body">
-                        <form id="departmentForm">
-                            <input type="hidden" id="departmentId">
-                            <div class="mb-3">
-                                <label class="form-label">Name</label>
-                                <input type="text" class="form-control" id="name" required placeholder="e.g., Engineering">
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">Description</label>
-                                <textarea class="form-control" id="description" rows="3" placeholder="Brief description"></textarea>
-                            </div>
-                        </form>
+                        <input type="hidden" id="departmentId" value="${dept ? dept.id : ''}">
+                        <div class="mb-3">
+                            <label class="form-label">Name</label>
+                            <input type="text" class="form-control" id="deptName"
+                                   value="${dept ? dept.name : ''}" placeholder="e.g., Engineering" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Description</label>
+                            <textarea class="form-control" id="deptDescription" rows="3"
+                                      placeholder="Brief description">${dept ? (dept.description || '') : ''}</textarea>
+                        </div>
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -1566,74 +1452,37 @@ function openAddDepartmentModal() {
             </div>
         </div>
     `;
+}
 
-    const modal = new bootstrap.Modal(document.getElementById('departmentModal'));
-    modal.show();
+function openAddDepartmentModal() {
+    document.getElementById('modals-container').innerHTML = buildDeptModalHTML('Add Department');
+    new bootstrap.Modal(document.getElementById('departmentModal')).show();
 }
 
 function editDepartment(id) {
     const dept = getById('departments', id);
-    const modalsContainer = document.getElementById('modals-container');
-
-    modalsContainer.innerHTML = `
-        <div class="modal fade" id="departmentModal" tabindex="-1">
-            <div class="modal-dialog">
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h5 class="modal-title">Edit Department</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                    </div>
-                    <div class="modal-body">
-                        <form id="departmentForm">
-                            <input type="hidden" id="departmentId" value="${dept.id}">
-                            <div class="mb-3">
-                                <label class="form-label">Name</label>
-                                <input type="text" class="form-control" id="name" required value="${dept.name}">
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">Description</label>
-                                <textarea class="form-control" id="description" rows="3">${dept.description || ''}</textarea>
-                            </div>
-                        </form>
-                    </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                        <button type="button" class="btn btn-primary" onclick="saveDepartment()">Save</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    `;
-
-    const modal = new bootstrap.Modal(document.getElementById('departmentModal'));
-    modal.show();
+    document.getElementById('modals-container').innerHTML = buildDeptModalHTML('Edit Department', dept);
+    new bootstrap.Modal(document.getElementById('departmentModal')).show();
 }
 
 function saveDepartment() {
-    const id = document.getElementById('departmentId').value;
-    const name = document.getElementById('name').value.trim();
-    const description = document.getElementById('description').value.trim();
+    const id          = document.getElementById('departmentId').value;
+    const name        = document.getElementById('deptName').value.trim();
+    const description = document.getElementById('deptDescription').value.trim();
 
-    if (!name) {
-        showToast('Please enter a department name', 'danger');
-        return;
-    }
+    if (!name) { showToast('Please enter a department name.', 'danger'); return; }
 
-    const existing = getAll('departments').find(d =>
+    const duplicate = getAll('departments').find(d =>
         d.name.toLowerCase() === name.toLowerCase() && (!id || d.id !== parseInt(id))
     );
-
-    if (existing) {
-        showToast('Department name already exists', 'danger');
-        return;
-    }
+    if (duplicate) { showToast('Department name already exists.', 'danger'); return; }
 
     if (id) {
         updateItem('departments', id, { name, description });
-        showToast('Department updated successfully!', 'success');
+        showToast('Department updated.', 'success');
     } else {
         addItem('departments', { name, description });
-        showToast('Department created successfully!', 'success');
+        showToast('Department created.', 'success');
     }
 
     bootstrap.Modal.getInstance(document.getElementById('departmentModal')).hide();
@@ -1641,17 +1490,16 @@ function saveDepartment() {
 }
 
 function deleteDepartment(id) {
-    const dept = getById('departments', id);
-    const employees = getAll('employees').filter(emp => emp.departmentId === id);
+    const dept      = getById('departments', id);
+    const employees = getAll('employees').filter(e => e.departmentId === id);
 
     if (employees.length > 0) {
-        showToast(`Cannot delete department with ${employees.length} employee(s)`, 'danger');
+        showToast(`Cannot delete a department with ${employees.length} employee(s).`, 'danger');
         return;
     }
-
-    if (!confirm(`Are you sure you want to delete ${dept.name}?`)) return;
+    if (!confirm(`Delete department "${dept.name}"?`)) return;
     deleteItem('departments', id);
-    showToast('Department deleted successfully!', 'success');
+    showToast('Department deleted.', 'success');
     loadDepartments();
 }
 
@@ -1660,50 +1508,44 @@ function deleteDepartment(id) {
 // ============================================
 
 function showToast(message, type = 'info') {
-    const toastHtml = `
-        <div class="toast align-items-center text-white bg-${type} border-0" role="alert" aria-live="assertive" aria-atomic="true">
-            <div class="d-flex">
-                <div class="toast-body">${message}</div>
-                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
-            </div>
-        </div>
-    `;
-
     let container = document.querySelector('.toast-container');
     if (!container) {
         container = document.createElement('div');
-        container.className = 'toast-container position-fixed top-0 end-0 p-3';
+        container.className   = 'toast-container position-fixed top-0 end-0 p-3';
         container.style.zIndex = '9999';
         document.body.appendChild(container);
     }
 
-    container.insertAdjacentHTML('beforeend', toastHtml);
-    const toastElement = container.lastElementChild;
-    const toast = new bootstrap.Toast(toastElement);
-    toast.show();
+    const toastEl = document.createElement('div');
+    toastEl.className = `toast align-items-center text-white bg-${type} border-0`;
+    toastEl.setAttribute('role', 'alert');
+    toastEl.innerHTML = `
+        <div class="d-flex">
+            <div class="toast-body">${message}</div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto"
+                    data-bs-dismiss="toast"></button>
+        </div>
+    `;
 
-    toastElement.addEventListener('hidden.bs.toast', function() {
-        toastElement.remove();
-    });
+    container.appendChild(toastEl);
+    const toast = new bootstrap.Toast(toastEl, { delay: 3500 });
+    toast.show();
+    toastEl.addEventListener('hidden.bs.toast', () => toastEl.remove());
 }
 
 function isValidEmail(email) {
-    const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return re.test(email);
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
 function formatDate(dateString) {
-    if (!dateString) return '-';
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric'
+    if (!dateString) return '—';
+    return new Date(dateString).toLocaleDateString('en-US', {
+        year: 'numeric', month: 'short', day: 'numeric'
     });
 }
 
 // ============================================
-// Initialize Application
+// Verify token with backend on page load
 // ============================================
 
 async function verifyTokenWithBackend() {
@@ -1711,30 +1553,29 @@ async function verifyTokenWithBackend() {
     if (!token) return;
 
     try {
-        const response = await fetch('http://localhost:3000/api/profile', {
-            headers: getAuthHeader()
-        });
-
-        if (!response.ok) {
+        const res = await fetch('http://localhost:3000/api/profile', { headers: getAuthHeader() });
+        if (!res.ok) {
             sessionStorage.removeItem('authToken');
             setAuthState(false, null);
             showToast('Session expired. Please log in again.', 'warning');
-            navigateTo('#/login');
         } else {
             currentUser = getCurrentUser();
             setAuthState(true, currentUser);
         }
     } catch (e) {
-        console.warn('Backend not reachable. Continuing with cached token.');
+        // backend unreachable — continue with cached token
+        console.warn('Backend not reachable, continuing with cached token.');
     }
 }
+
+// ============================================
+// Bootstrap
+// ============================================
 
 document.addEventListener('DOMContentLoaded', async function() {
     initializeDatabase();
 
-    if (!window.location.hash) {
-        window.location.hash = '#/';
-    }
+    if (!window.location.hash) window.location.hash = '#/';
 
     await verifyTokenWithBackend();
 

@@ -1,13 +1,13 @@
 // server.js
 const express = require('express');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-const cors = require('cors');
+const bcrypt  = require('bcryptjs');
+const jwt     = require('jsonwebtoken');
+const cors    = require('cors');
 
-const app = express();
+const app  = express();
 const PORT = 3000;
 
-// FIX #3: Hardened SECRET_KEY — warns in dev, never silently uses a weak secret
+// Warns in dev if JWT_SECRET env var is missing — never silently use a weak secret in prod
 const SECRET_KEY = process.env.JWT_SECRET;
 if (!SECRET_KEY) {
     console.warn('⚠️  WARNING: JWT_SECRET is not set in environment variables.');
@@ -18,28 +18,28 @@ const EFFECTIVE_SECRET = SECRET_KEY || 'temp-dev-only-secret';
 app.use(cors({
     origin: ['http://127.0.0.1:5500', 'http://localhost:5500']
 }));
-
 app.use(express.json());
 
-// ─── SINGLE SOURCE OF TRUTH ────────────────────────────────────
+// ─── IN-MEMORY USER STORE ──────────────────────────────────────
+// Replace with a real database (MySQL, PostgreSQL, etc.) in production.
 let users = [
     {
-        id: 1,
-        username: 'admin@example.com',
+        id:        1,
+        username:  'admin@example.com',
         firstName: 'Admin',
-        lastName: 'User',
-        password: bcrypt.hashSync('admin123', 10),
-        role: 'admin',
-        verified: true
+        lastName:  'User',
+        password:  bcrypt.hashSync('admin123', 10),
+        role:      'admin',
+        verified:  true
     },
     {
-        id: 2,
-        username: 'alice@example.com',
+        id:        2,
+        username:  'alice@example.com',
         firstName: 'Alice',
-        lastName: 'Smith',
-        password: bcrypt.hashSync('user123', 10),
-        role: 'user',
-        verified: true
+        lastName:  'Smith',
+        password:  bcrypt.hashSync('user123', 10),
+        role:      'user',
+        verified:  true
     }
 ];
 
@@ -49,74 +49,60 @@ function nextId() {
 
 // ─── PUBLIC ROUTES ─────────────────────────────────────────────
 
-// POST /api/register
-// Creates account with verified: false — must wait for admin approval
+// POST /api/register — new user, unverified until admin approves
 app.post('/api/register', async (req, res) => {
     const { username, password, firstName = '', lastName = '' } = req.body;
 
-    if (!username || !password) {
+    if (!username || !password)
         return res.status(400).json({ error: 'Username and password required' });
-    }
-
-    if (password.length < 6) {
+    if (password.length < 6)
         return res.status(400).json({ error: 'Password must be at least 6 characters' });
-    }
-
-    const existing = users.find(u => u.username === username);
-    if (existing) {
+    if (users.find(u => u.username === username))
         return res.status(409).json({ error: 'User already exists' });
-    }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-
     const newUser = {
         id: nextId(),
         username,
         firstName,
         lastName,
         password: hashedPassword,
-        role: 'user',
-        verified: false  // Must wait for admin approval
+        role:     'user',
+        verified: false   // admin must approve before user can log in
     };
-
     users.push(newUser);
+
     res.status(201).json({
-        message: 'Registration successful. Please wait for admin approval before logging in.',
+        message:  'Registration successful. Please wait for admin approval.',
         username,
-        role: 'user',
+        role:     'user',
         verified: false
     });
 });
 
 // POST /api/login
-// Blocks login if account is not verified
 app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
 
-    if (!username || !password) {
+    if (!username || !password)
         return res.status(400).json({ error: 'Username and password required' });
-    }
 
     const user = users.find(u => u.username === username);
-    if (!user || !await bcrypt.compare(password, user.password)) {
+    if (!user || !await bcrypt.compare(password, user.password))
         return res.status(401).json({ error: 'Invalid credentials' });
-    }
 
-    // Block login if not verified
-    if (!user.verified) {
+    if (!user.verified)
         return res.status(403).json({
             error: 'Your account is pending admin approval. Please wait for verification.'
         });
-    }
 
-    // FIX #3: Use EFFECTIVE_SECRET
     const token = jwt.sign(
         {
-            id: user.id,
-            username: user.username,
+            id:        user.id,
+            username:  user.username,
             firstName: user.firstName,
-            lastName: user.lastName,
-            role: user.role
+            lastName:  user.lastName,
+            role:      user.role
         },
         EFFECTIVE_SECRET,
         { expiresIn: '1h' }
@@ -125,19 +111,14 @@ app.post('/api/login', async (req, res) => {
     res.json({
         token,
         user: {
-            id: user.id,
-            username: user.username,
+            id:        user.id,
+            username:  user.username,
             firstName: user.firstName,
-            lastName: user.lastName,
-            role: user.role,
-            verified: user.verified
+            lastName:  user.lastName,
+            role:      user.role,
+            verified:  user.verified
         }
     });
-});
-
-// GET /api/content/guest — Public
-app.get('/api/content/guest', (req, res) => {
-    res.json({ message: 'Public content for all visitors' });
 });
 
 // ─── PROTECTED ROUTES ──────────────────────────────────────────
@@ -151,175 +132,127 @@ app.get('/api/profile', authenticateToken, (req, res) => {
 app.put('/api/profile', authenticateToken, async (req, res) => {
     const { firstName, lastName, email } = req.body;
     const userId = req.user.id;
+    const idx    = users.findIndex(u => u.id === userId);
+    if (idx === -1) return res.status(404).json({ error: 'User not found' });
 
-    const userIndex = users.findIndex(u => u.id === userId);
-    if (userIndex === -1) {
-        return res.status(404).json({ error: 'User not found' });
-    }
-
-    if (email && email !== users[userIndex].username) {
-        const emailTaken = users.find(u => u.username === email && u.id !== userId);
-        if (emailTaken) {
+    if (email && email !== users[idx].username) {
+        if (users.find(u => u.username === email && u.id !== userId))
             return res.status(409).json({ error: 'Email already in use' });
-        }
-        users[userIndex].username = email;
+        users[idx].username = email;
     }
+    if (firstName) users[idx].firstName = firstName;
+    if (lastName)  users[idx].lastName  = lastName;
 
-    if (firstName) users[userIndex].firstName = firstName;
-    if (lastName) users[userIndex].lastName = lastName;
-
-    const updatedUser = users[userIndex];
-
-    // FIX #3: Use EFFECTIVE_SECRET
+    const u        = users[idx];
     const newToken = jwt.sign(
-        {
-            id: updatedUser.id,
-            username: updatedUser.username,
-            firstName: updatedUser.firstName,
-            lastName: updatedUser.lastName,
-            role: updatedUser.role
-        },
+        { id: u.id, username: u.username, firstName: u.firstName, lastName: u.lastName, role: u.role },
         EFFECTIVE_SECRET,
         { expiresIn: '1h' }
     );
 
     res.json({
         message: 'Profile updated',
-        token: newToken,
-        user: {
-            id: updatedUser.id,
-            username: updatedUser.username,
-            firstName: updatedUser.firstName,
-            lastName: updatedUser.lastName,
-            role: updatedUser.role
-        }
+        token:   newToken,
+        user:    { id: u.id, username: u.username, firstName: u.firstName, lastName: u.lastName, role: u.role }
     });
 });
 
-// ─── ADMIN ONLY ROUTES ─────────────────────────────────────────
+// ─── ADMIN ROUTES ──────────────────────────────────────────────
 
 // GET /api/admin/dashboard
 app.get('/api/admin/dashboard', authenticateToken, authorizeRole('admin'), (req, res) => {
-    res.json({ message: 'Welcome to admin dashboard!', data: 'Secret admin info' });
+    res.json({ message: 'Welcome to the admin dashboard!', data: 'Secret admin info' });
 });
 
-// GET /api/users — Get all users (passwords never included)
+// GET /api/users — list all users (no passwords)
 app.get('/api/users', authenticateToken, authorizeRole('admin'), (req, res) => {
-    const safeUsers = users.map(({ password, ...u }) => u);
-    res.json(safeUsers);
+    res.json(users.map(({ password, ...u }) => u));
 });
 
-// POST /api/users — Admin creates account (can set verified directly)
+// POST /api/users — admin creates account
 app.post('/api/users', authenticateToken, authorizeRole('admin'), async (req, res) => {
     const { username, password, firstName = '', lastName = '', role = 'user', verified = false } = req.body;
 
-    if (!username || !password) {
+    if (!username || !password)
         return res.status(400).json({ error: 'Username and password required' });
-    }
-
-    if (password.length < 6) {
+    if (password.length < 6)
         return res.status(400).json({ error: 'Password must be at least 6 characters' });
-    }
-
-    const existing = users.find(u => u.username === username);
-    if (existing) {
+    if (users.find(u => u.username === username))
         return res.status(409).json({ error: 'User already exists' });
-    }
-
-    const hashedPassword = await bcrypt.hash(password, 10);
 
     const newUser = {
-        id: nextId(),
+        id:       nextId(),
         username,
         firstName,
         lastName,
-        password: hashedPassword,
+        password: await bcrypt.hash(password, 10),
         role,
         verified
     };
-
     users.push(newUser);
+
     const { password: _, ...safeUser } = newUser;
     res.status(201).json({ message: 'Account created', user: safeUser });
 });
 
-// PUT /api/users/:id — Admin edits account
+// PUT /api/users/:id — admin edits account
 app.put('/api/users/:id', authenticateToken, authorizeRole('admin'), (req, res) => {
-    const id = parseInt(req.params.id);
+    const id  = parseInt(req.params.id);
+    const idx = users.findIndex(u => u.id === id);
+    if (idx === -1) return res.status(404).json({ error: 'User not found' });
+
     const { firstName, lastName, email, role, verified } = req.body;
-
-    const userIndex = users.findIndex(u => u.id === id);
-    if (userIndex === -1) {
-        return res.status(404).json({ error: 'User not found' });
-    }
-
-    if (email && email !== users[userIndex].username) {
-        const emailTaken = users.find(u => u.username === email && u.id !== id);
-        if (emailTaken) {
+    if (email && email !== users[idx].username) {
+        if (users.find(u => u.username === email && u.id !== id))
             return res.status(409).json({ error: 'Email already in use' });
-        }
-        users[userIndex].username = email;
+        users[idx].username = email;
     }
+    if (firstName !== undefined) users[idx].firstName = firstName;
+    if (lastName  !== undefined) users[idx].lastName  = lastName;
+    if (role      !== undefined) users[idx].role      = role;
+    if (verified  !== undefined) users[idx].verified  = verified;
 
-    if (firstName !== undefined) users[userIndex].firstName = firstName;
-    if (lastName !== undefined) users[userIndex].lastName = lastName;
-    if (role !== undefined) users[userIndex].role = role;
-    if (verified !== undefined) users[userIndex].verified = verified;
-
-    const { password: _, ...safeUser } = users[userIndex];
+    const { password: _, ...safeUser } = users[idx];
     res.json({ message: 'Account updated', user: safeUser });
 });
 
-// PATCH /api/users/:id/verify — Admin approves/rejects account
+// PATCH /api/users/:id/verify — admin approves or rejects
 app.patch('/api/users/:id/verify', authenticateToken, authorizeRole('admin'), (req, res) => {
-    const id = parseInt(req.params.id);
-    const { verified } = req.body;
+    const id  = parseInt(req.params.id);
+    const idx = users.findIndex(u => u.id === id);
+    if (idx === -1) return res.status(404).json({ error: 'User not found' });
 
-    const userIndex = users.findIndex(u => u.id === id);
-    if (userIndex === -1) {
-        return res.status(404).json({ error: 'User not found' });
-    }
-
-    users[userIndex].verified = verified;
-
+    users[idx].verified = req.body.verified;
     res.json({
-        message: verified ? 'Account approved successfully' : 'Account rejected',
-        user: { id, verified }
+        message: req.body.verified ? 'Account approved' : 'Account rejected',
+        user:    { id, verified: req.body.verified }
     });
 });
 
-// PUT /api/users/:id/password — Admin resets password (hashed on backend)
+// PUT /api/users/:id/password — admin resets password
 app.put('/api/users/:id/password', authenticateToken, authorizeRole('admin'), async (req, res) => {
-    const id = parseInt(req.params.id);
+    const id  = parseInt(req.params.id);
+    const idx = users.findIndex(u => u.id === id);
+    if (idx === -1) return res.status(404).json({ error: 'User not found' });
+
     const { password } = req.body;
-
-    if (!password || password.length < 6) {
+    if (!password || password.length < 6)
         return res.status(400).json({ error: 'Password must be at least 6 characters' });
-    }
 
-    const userIndex = users.findIndex(u => u.id === id);
-    if (userIndex === -1) {
-        return res.status(404).json({ error: 'User not found' });
-    }
-
-    users[userIndex].password = await bcrypt.hash(password, 10);
+    users[idx].password = await bcrypt.hash(password, 10);
     res.json({ message: 'Password reset successfully' });
 });
 
-// DELETE /api/users/:id — Admin deletes account
+// DELETE /api/users/:id
 app.delete('/api/users/:id', authenticateToken, authorizeRole('admin'), (req, res) => {
     const id = parseInt(req.params.id);
-
-    if (id === req.user.id) {
+    if (id === req.user.id)
         return res.status(403).json({ error: 'Cannot delete your own account' });
-    }
 
-    const userIndex = users.findIndex(u => u.id === id);
-    if (userIndex === -1) {
-        return res.status(404).json({ error: 'User not found' });
-    }
+    const idx = users.findIndex(u => u.id === id);
+    if (idx === -1) return res.status(404).json({ error: 'User not found' });
 
-    users.splice(userIndex, 1);
+    users.splice(idx, 1);
     res.json({ message: 'Account deleted' });
 });
 
@@ -327,13 +260,9 @@ app.delete('/api/users/:id', authenticateToken, authorizeRole('admin'), (req, re
 
 function authenticateToken(req, res, next) {
     const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
+    const token      = authHeader && authHeader.split(' ')[1];
+    if (!token) return res.status(401).json({ error: 'Access token required' });
 
-    if (!token) {
-        return res.status(401).json({ error: 'Access token required' });
-    }
-
-    // FIX #3: Use EFFECTIVE_SECRET
     jwt.verify(token, EFFECTIVE_SECRET, (err, user) => {
         if (err) return res.status(403).json({ error: 'Invalid or expired token' });
         req.user = user;
@@ -343,17 +272,16 @@ function authenticateToken(req, res, next) {
 
 function authorizeRole(role) {
     return (req, res, next) => {
-        if (req.user.role !== role) {
+        if (req.user.role !== role)
             return res.status(403).json({ error: 'Access denied: insufficient permissions' });
-        }
         next();
     };
 }
 
-// ─── START SERVER ──────────────────────────────────────────────
+// ─── START ─────────────────────────────────────────────────────
 app.listen(PORT, () => {
     console.log(`✅ Backend running on http://localhost:${PORT}`);
-    console.log(`🔐 Try logging in with:`);
-    console.log(`   - Admin: username=admin@example.com, password=admin123`);
-    console.log(`   - User:  username=alice@example.com, password=user123`);
+    console.log(`🔐 Demo credentials:`);
+    console.log(`   Admin: admin@example.com  /  admin123`);
+    console.log(`   User:  alice@example.com  /  user123`);
 });
