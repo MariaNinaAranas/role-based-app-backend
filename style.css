@@ -1,0 +1,58 @@
+/* ============================================================
+   PHASE 1 - Required CSS Rules (from activity guide)
+   ============================================================ */
+
+/* Hide all pages by default */
+.page { display: none; }
+
+/* Only show the active page */
+.page.active { display: block; }
+
+/* When NOT authenticated: hide logged-in elements */
+body.not-authenticated .role-logged-in { display: none; }
+
+/* When authenticated: hide logged-out elements */
+body.authenticated .role-logged-out { display: none; }
+
+/* Admin-only elements hidden by default */
+.role-admin { display: none; }
+
+/* Show admin elements only when user is admin */
+body.is-admin .role-admin { display: block; }
+
+/* ============================================================
+   EXTRA POLISH
+   ============================================================ */
+
+body {
+  background-color: #f8f9fa;
+}
+
+main {
+  min-height: calc(100vh - 60px);
+}
+
+/* Make nav dropdown items show correctly as inline (for nav links) */
+.role-admin.dropdown-item {
+  display: none;
+}
+
+body.is-admin .role-admin.dropdown-item {
+  display: block;
+}
+
+/* Toast styling */
+.toast-msg {
+  min-width: 250px;
+}
+
+/* Status badge spacing */
+.badge {
+  font-size: 0.85rem;
+  padding: 0.4em 0.7em;
+}
+
+/* Card form max width consistency */
+.card {
+  border-radius: 8px;
+}
